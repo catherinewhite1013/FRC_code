@@ -8,11 +8,11 @@ class MyRobot(wpilib.TimedRobot):
             This function is called upon program startup and
             should be used for any initialization code.
             """
-            self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed) 
+            self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed) #這個出錯不要理他
             self.leftRear = rev.SparkMax(4, rev.SparkMax.MotorType.kBrushed) 
             self.rightFront = rev.SparkMax(2, rev.SparkMax.MotorType.kBrushed)
             self.rightRear = rev.SparkMax(3, rev.SparkMax.MotorType.kBrushed)
-            self.leftRear.follow(self.leftFront)
+            self.leftRear.follow(self.leftFront) #這個也是不理他
             self.rightRear.follow(self.rightFront)
             self.robotDrive = wpilib.drive.DifferentialDrive(self.leftFront, self.rightFront)
             self.controller = wpilib.XboxController(0)
