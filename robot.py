@@ -1,37 +1,191 @@
-import wpilib           # Used to get the joysticks
-import wpilib.drive     # Used for the DifferentialDrive class
-import rev              # REV library
+import wpilib
+import commands2
+import wpilib.drive
+import rev
 
-class MyRobot(wpilib.TimedRobot):
-    def robotInit(self):
-        """
-        This function is called upon program startup and
-        should be used for any initialization code.
-        """
-        self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed) #這個出錯不要理他
-        self.leftRear = rev.SparkMax(4, rev.SparkMax.MotorType.kBrushed) 
+
+class DriveSubsystem(commands2.SubsystemBase):
+    def __init__(self):
+        super().__init__()
+        # 建立 4 顆 SparkMax (使用 CAN ID)
+        self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed)  # 出錯不要理他
+        self.leftRear = rev.SparkMax(4, rev.SparkMax.MotorType.kBrushed)
         self.rightFront = rev.SparkMax(2, rev.SparkMax.MotorType.kBrushed)
         self.rightRear = rev.SparkMax(3, rev.SparkMax.MotorType.kBrushed)
-        self.leftRear.follow(self.leftFront) #這個也是不理他
+
+        # 後輪跟隨前輪
+        self.leftRear.follow(self.leftFront)    # 出錯不要理他
         self.rightRear.follow(self.rightFront)
-        self.robotDrive = wpilib.drive.DifferentialDrive(self.leftFront, self.rightFront)
-        self.controller = wpilib.XboxController(0)
+
+        # 看情況改
         self.rightFront.setInverted(True)
 
-    def deadzone(self, value, zone = 0.1): #zone之後測試
-        if abs(value) < zone: #看一下搖桿數值有沒有大於zone
-           return 0.0
-        return value 
+        #開車車設定
+        self.robotDrive = wpilib.drive.DifferentialDrive(self.leftFront, self.rightFront)
+
+    def deadzone(self, value, zone=0.1):    # 死區判斷(不要亂抖aaaaaa)
+        if abs(value) < zone:
+            return 0.0
+        return value
+
+    def arcadeDrive(self, forward: float, turn: float):    # 開車車指令2
+        self.robotDrive.arcadeDrive(forward, turn)
+
+    def stop(self):    # 停止馬達
+        self.robotDrive.arcadeDrive(0.0, 0.0)
+
+
+class Auto(commands2.CommandBase):
+    def __init__(self, drive: DriveSubsystem):
+        super().__init__()
+        self.drive = drive
+        self.timer = wpilib.Timer()
+        self.addRequirements(drive)
+        self.stage = 0
+
+    def initialize(self):    #這名稱是commandBase的
+        self.timer.reset()
+        self.timer.start()
+        self.stage = 0
+
+    def execute(self):    # +1
+        if self.stage == 0:
+            # 第一階段：往前移動 2 秒
+            self.drive.arcadeDrive(0.5, 0.0)
+            if self.timer.get() >= 2.0:
+                self.stage = 1
+                self.timer.reset()
+        elif self.stage == 1:
+            # 第二階段：轉彎 1 秒
+            self.drive.arcadeDrive(0.0, 0.5)
+            if self.timer.get() >= 1.0:
+                self.stage = 2
+        else:
+            # 第三階段（結束）
+            self.drive.stop()
+
+    def isFinished(self) -> bool:    # +1
+        return self.stage >= 2
+
+    def end(self, interrupted: bool):    # +1
+        self.drive.stop()
+
+
+class RobotContainer:
+    def __init__(self):
+        self.driveSubsystem = DriveSubsystem()
+        self.xbox = wpilib.XboxController(0)
+
+        # Teleop 模式下用搖桿控制
+        self.driveSubsystem.setDefaultCommand(commands2.cmd.Run(
+                lambda: self.driveSubsystem.arcadeDrive(
+                    self.driveSubsystem.deadzone(-self.xbox.getLeftY()),        # 有負號是因為 arcadeDrive 前進是正數，xboxcontroller 前進是負數
+                    self.driveSubsystem.deadzone(-self.xbox.getRightX()),) ,    # abs()怎麼後退我就問
+                    [self.driveSubsystem],))
+
+        # 自動指令
+        self.autoCommand = Auto(self.driveSubsystem)
+
+    def getAutonomousCommand(self):
+        return self.autoCommand
+
+
+class Robot(commands2.TimedCommandRobot):
+    def robotInit(self):
+        self.container = RobotContainer()
+
+    def autonomousInit(self):
+        self.autonomousCommand = self.container.getAutonomousCommand()
+        if self.autonomousCommand:
+            self.autonomousCommand.schedule()
 
     def teleopInit(self):
-        """This function is called once each time the robot enters teleoperated mode."""
-
-    def teleopPeriodic(self):
-        """This function is called periodically during teleoperated mode."""
-        self.robotDrive.arcadeDrive( self.deadzone(self.controller.getLeftY()), self.deadzone(self.controller.getRightX()) ) #調用zone(數值為搖桿XY)
-
-if __name__ == "main":
-    wpilib.run(MyRobot)
+        if self.autonomousCommand:
+            self.autonomousCommand.cancel()
 
 
-    
+if __name__ == "__main__":
+    wpilib.run(Robot)    #把前面那坨拿來用
+
+
+
+
+#出錯不要理他
+#我們有乖乖別怕
+"""
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMN00KKKKXXXNNNNNNNNNNNNNNNNNNNNNNNWWNWWWWWWWWWWWWWWWWWWWWWWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWMWWWWNNNNNXXXXNMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMM0oooooodddxxkkkkkkkkkkkkkkkkkkkkkkkkkkkkkOOOOOOOOOOOOOOOO0000000000000KKKKK0000000000000000000OOOOOkkkxxdddooo0WMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMM0oooollooddddddxxxxxxxxxdxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxdddddoooollOWMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMKxddooooodddxxxxxxxxkxxxxxkxxxkkxxxkkxxkxxxxkxxxxkkxxkkxxkkkkxxxkxxkkkkkkkkkkkkkkkkkkkkkkxxxxxxxxxxxdddddodollOWMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMNkddxddxxkkkkkkkkkOOOOOkkkOkkOOOkkOOOkkOOkkkOOkkkOOOkOOOkOOOOOkkOOOOOOOOOOOOOOOOOOOOOOOOkkkkkkkkkkkkkkxxxxdoodKWMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMXxoddxxkkkOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOkkkkkkkkkkkkkkkkkOOOOOkkkOOOOkkOOOkkxxddolldKWMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMNOddxxxxkkkkxdolclllodkOOOOOOOOOOOOkOOOOOOkkOkxkOOOOOOOOOOOOOOkkkxxxxkkkkkOOOkOOOkOOkOkkOOOkxddddddxdddookNMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMWXOxxkkkkdc;,,,,,,,,,:oxxkOkxl:::ldxc;clodxo,,cccclxkkkOOOOOOOkkxxxxxkkkOOO0K0OkOKOxOOkkkkkxc,:lc;lxxdoOWMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMXkdkkOxlcooo:,,:lool:cxOd,'';::c,.'c:,,::.'c:;,;:okkkkkOOOOOkkkxxkkkkOOOO0K0OkOK0OkkOkkxkd'.::;,:odlkNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKoldkOddO00Oxc;dO0Oko;oO:.,,;:cl;..;''.;lc,.;cc::dkOOkkkOOOOOkkkkOOOOOOOOOOOkkOK00OkOOkkkx:;clllldolOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKolokOxk00kkOo:xOkkkx;lOl.;l,;olc'.:ol',ox;.cl:ldxkkOkkkkOOOOOOOOOOOOOkkOO0OkkkkOOkOOOOOOxdodxxxdolckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKocldOOkxxkoc::::oo:::dOOo,:ccll:;cldo:cdxocllldkkkkkOkkkOOOOOOOOOOkdc::coxOOOOkOOkOOOkkOo;cdxxocclcxWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0olodk00kxxolc::cl:,;okOOOkxxxxxxkOOOOkkkkkkkxxxxxkkkOkkkOOOkkxxddl;:c;,,,;:clllllokxdkkOdcdxdxdlclcxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lclox0K0Oxol:;;;:clxOOOOOOOkkddolccccccclloxkkkkOOkkkkkxoc:;,''....''....,,. .'::;,'ckkOd:ldddocclcdNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lcloxOKXXKOxoooodxkkOOkdlc::cllloooddooollc:okkkkkkkdc;,.................',..ckOOOo':kOko,;cooc;:lcxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lclodOKXXKK0OkkkkkOxo:::ldxk0Kkk0kd0Od00dkKddkkOOko;.....................',..o0Ok0x.'kOkc,:oxxl:clcxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0l:codOKXXXK0OOkkxl:;cdO0kkxcldllxxokOdOOok0xkOOOd;.......................',. .:ddc. .dOkxxkkkkkdlccxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0c:codOK000xxkdl:;:d00xkd;;dxxkOkkxxxxxxxkkkddOOo'........................',. ,oxxd; .dOkkkkkOOkxlccxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lclodkOxdolccclokOOOxod0Odddoc:;;;::;'..'::;lxl...........................,..dOkk0k''xOkkkkkOOOxlccxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lclodOKKK00OkkOd:lxOOOkdl:;:coddxdl;.....:xkxc............................,. ,odxo; 'xOkkkkOOOOxlccxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKlclodkXWWKOko;cxddOkdc;:loxkkOkkl'........':;...,;,.....:oddxxdol:,.......'. .:ddc. 'xOkkkkOOOkxlccxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKoclodkKXNKkO0kkOOdc;:ldkkOOkkkkkl.............,xKK0l..'lxclONWWWNkodo:...'c,.o0kO0x.'xOkkkkOOOkxllcxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMXoclodkKK0Okkdol:;:ldkOOOkxxxddddd;............lXOxKx.:OKx:kNWNNWXd;;kXk;..::'ckOOOl.'xOkkkO00OOxllcxNMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMXdclodkKK0kdlccloxkkkxddxkOO00Od:;c'...........lKKkOko0WNl'dNNNNKl:kKXNKc..,c,.'::,. 'dOkkO0000OxolckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMXdclodk000OOOkkkkdooddxk0XWMMXxc;cxd'      ....'oO0XNKdlkK0XXKKNO;c0WNNo.'lxOko'......;xOO00KOdddollOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMXdclodk00OOOkkxlloOOxddodkKNNXKklcdOd'  'cc'.   ,ONNNx. .l0XXXXNN0xkKNXdlOX00K0l'.,;...'coxxxolcclll0MMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNxclodk000OOko:l0WWKkkkXNWWNXXWWXo;oOx;,kWXc':;.;KWNNl  .dX0k0Xx:'.oKXNNNNKxONNNx;xXx,...':clllc,;llOMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNxccoox000Oxl;dNMMWKkkkkxxdOKXWMWKc:xOxxXWOo0Xd.'ONNXo..'ldccOKo. ;0NNNNXX0OKXXW0cxXO:...,:llllc'.:lOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNxclooxO0Oko;lXWWWWWKOkdoooxKNWWWNd;dOxkNWXXXO:..lXNNOoddolclooc,:ONNNN0l,ckXXKxc;dKO:...,:llllc'.;lOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWxclodkOOOkl,dKxook0kxdkxoolkKOdkKocOK0KNNNWNXx' .c0NXOxxkkOOOkkkKNNNKko::cONNNc.,dKl....,:cllllccllkWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWkccldxkkkko;okccdddl:clc;,;o0OldxcoOO0KNNNNNOlc:,';d0KK0OOkkOOKXNNKOxdoooloKN0;..,;.....,:ldxkOxolckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWOccloxkkxkxl:ldxOkOkxxkOkdd0X0xoldOOOkkOOOOxllooolcckOOOOOO0000Okkxoddoooolol' ..    ..:oxOK00OxllckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWOllodxkkkkxxdloOXWMNK00OOXWWXkddkOOOOOkkkdlcccccccoOXkoxkdk00OOdodddoolc:;'..  ...';clxO00000OkdlcckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMM0llodxkkkkkkkkdodxOkxxxolxOkxxkkkkkOkkxkkkkxdooolcdOOdlllo0KK0kdddol:,'....',;..'ckkkkkOO00000kdllckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMM0lloxOOOOOOOOOOOOkxxxxxxxxkOOOkkkkkkkkkkkkkkkkkkko:llllollxOOkkxdoloddxxkkO000o:cx0000KKXXXXXXOolcckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMOlloxKXNNNNNNNNNNXXXXXNXXXXXXXXXXXXXXXXXXXXXXXXXXK0KKKKKKKXXXXXKKKKXNNNNNNNNNNNNNNWWWWWWWWWWWNOollckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWOllodONWWXKKXNNXKKXNNXKKXNWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWMMMMMMMMMMMMMMMWKxlllckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWkclookXWXkkOOKKkkOOKKkOOOKMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWN0oclllkWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWkllolxKNN0OO0XN0OO0NN0O0KNMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWNklclllkWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMWxccllo0NWWWWMMMWWWMMMMWWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWXd:colckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNxcclllONWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWNNNXXKKNWWNXXXXXKKXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWKo:colckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNxccoolkNWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMNkoolcllokX0olllcclldKWMMMMMMMMMMMMMMMMMMMMMMMMMMMMW0c;lolckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNxcloolkXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWKdcccc:cldOxlc;c:ccclOWMMMMMMMMMMMMMMMMMMMMMMMMMMMMWk:;lolckWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNdcllolxXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMXkl:clccookOo:,clcclokWMMMMMMMMMMMMMMMMMMMMMMMMMMMWNx;;lollOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMNdclloldXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMXOxdoloxxxO0kdodloxxdOWMMMMMMMMMMMMMMMMMMMMMMMMMMMWNx,:oollOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMXdclodldKWWMWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWXKXWWWWWWWWNKXWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWMWXd,coollOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKoclododKWWWXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXNWWXo,colllOWMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKlclloldKWWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWXl'lolccOMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0l:cloldKWWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWXl,lollcOMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lcllooxKWWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWXl,odollOMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lcloddkXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWXl;odollOMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lcloddkXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWXo;odollOMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMOccloddOXWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWXd:odolcOMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMOccloddOXNMWXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXNWWNx:odoll0MMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMOlcloddOXWMWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWMWNkcodoloKMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMOlclodx0NWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMW0lldoldKMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0lloodx0NWMMMMMMMMMMMMMMMMMMMN0KNNNX0KNXO0NNNX0KNXOO0O0XKOkKKkOKKOK0O0K0XWMMMMMMNKKKNWWXKKXWWXdldoldXMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMM0oloodxKNWMMMMMMMMMMMMMMMMMMMN00XNNX00NXO0XNNX00NKkO00KXKOk00kOKKO00k0K0KWMMMMMW0kOOOX0kOOOXWNOooolxNMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKoloodkKNWMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMWX000KWX0OOKNWWXxdolOWMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKoloodOXNWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWMWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWNNWNNNXXXXKK0kdoo0MMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKoclodkOOkkkkkkkkkkkkkkOOOOO000000KKKKKKKKKKKKKKK00000000000OOOOOOOOkkkkkkxxxxxxxddddooooooooooooloKMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKocloddxxollllllllllloooooodddxxxxxxxxxxxxxxxxxddddooddoollllccc::::::;;;;;;;::::::ccccclllllooodooONMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMKocloooddddddxxxxxxkkkxxkxxkxxxxxxkkkkkkkkkkkkkOkkk0KKKKK0OkkOkxxkkkxxddddxxddxxxdxxxxdddxddxddddoold0WMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMNOocccloodddxxxxxddxddddddddddddddddxxooxkxxkkxdxkxxx0K00000kxkkxoodxxxdddddxxxxxxxxxxxxxxxdddddddddoollxXWMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMWKoc::ccloooooooooooooollllllllllllllllooooooddddooooooddddddooooooooooooollloooooddddddddddooolllloooolllcl0WMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMW0l::cclllllolllllllllccclccccccccccccccccccccccccccccccccccc::::::::c::cccccccccclllllllllllcccccccccccllcccdXMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMWx:::cccllloololoooooooooddddddddoddddddddddoddddddooodooooodoooooooooooooooodddddddddoooooodoolloooooolllllcoXMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMWk::cccclooooollooddoddoddddddddddddddxxxdddddddddddddddddddddddddddddddddddddxxxdxxxxddddddddooodddddooooolldXMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMWOllooddxxxkkxxkkOkOOOOOOOOOOkkkkkxxkkkkkkkkkkkkOOOOOOOOOOOOOOkkkkkkkkkkkkkkkkkkxxxxxxxxxxxxxxdddddddddddooolxNMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMWNNNNNNWWWWWWWWWWWWWMWWWWWWWWWWWWWWWWWWWWWWWWWWWWWMMMMMMMMWWWWWWWWWWWWWWWWWWWNNNNNNNNNNNNNNNNNXXXXXXXXXKKK00KWMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+"""
