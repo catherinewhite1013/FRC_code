@@ -30,6 +30,8 @@ class MyRobot(wpilib.TimedRobot):
         """This function is called periodically during teleoperated mode."""
         self.robotDrive.arcadeDrive( self.deadzone(self.controller.getLeftY()), self.deadzone(self.controller.getRightX()) ) #調用zone(數值為搖桿XY)
 
+if __name__ == "main":
+    wpilib.run(MyRobot)
 
 
     
