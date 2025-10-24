@@ -7,18 +7,17 @@ import rev
 class DriveSubsystem(commands2.SubsystemBase):
     def __init__(self):
         super().__init__()
+        self.autonomousCommand = None
         # 建立 4 顆 SparkMax (使用 CAN ID)
-        self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed)  # 出錯不要理他
+        self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed) 
         self.leftRear = rev.SparkMax(4, rev.SparkMax.MotorType.kBrushed)
         self.rightFront = rev.SparkMax(2, rev.SparkMax.MotorType.kBrushed)
-        self.rightRear = rev.SparkMax(3, rev.SparkMax.MotorType.kBrushed)
+        self.rightRear = rev.SparkMax(3, rev.SparkMax.MotorType.kBrushed)  
 
-        # 後輪跟隨前輪
-        self.leftRear.follow(self.leftFront)    # 出錯不要理他
-        self.rightRear.follow(self.rightFront)
 
         # 看情況改
-        self.rightFront.setInverted(True)
+        self.leftRear.setInverted(True)
+        self.leftFront.setInverted(True)
 
         #開車車設定
         self.robotDrive = wpilib.drive.DifferentialDrive(self.leftFront, self.rightFront)
@@ -29,13 +28,16 @@ class DriveSubsystem(commands2.SubsystemBase):
         return value
 
     def arcadeDrive(self, forward: float, turn: float):    # 開車車指令2
+        # 後輪跟隨前輪
+        self.leftRear.set(self.leftFront.get())
+        self.rightRear.set(self.rightFront.get())
         self.robotDrive.arcadeDrive(forward, turn)
 
     def stop(self):    # 停止馬達
         self.robotDrive.arcadeDrive(0.0, 0.0)
 
 
-class Auto(commands2.CommandBase):
+class Auto(commands2.Command):
     def __init__(self, drive: DriveSubsystem):
         super().__init__()
         self.drive = drive
@@ -43,7 +45,7 @@ class Auto(commands2.CommandBase):
         self.addRequirements(drive)
         self.stage = 0
 
-    def initialize(self):    #這名稱是commandBase的
+    def initialize(self):    #這名稱是command的
         self.timer.reset()
         self.timer.start()
         self.stage = 0
@@ -77,11 +79,11 @@ class RobotContainer:
         self.xbox = wpilib.XboxController(0)
 
         # Teleop 模式下用搖桿控制
-        self.driveSubsystem.setDefaultCommand(commands2.cmd.Run(
+        self.driveSubsystem.setDefaultCommand(commands2.cmd.run(
                 lambda: self.driveSubsystem.arcadeDrive(
-                    self.driveSubsystem.deadzone(-self.xbox.getLeftY()),        # 有負號是因為 arcadeDrive 前進是正數，xboxcontroller 前進是負數
-                    self.driveSubsystem.deadzone(-self.xbox.getRightX()),) ,    # abs()怎麼後退我就問
-                    [self.driveSubsystem],))
+                    self.driveSubsystem.deadzone(-self.xbox.getLeftY()),        #前後   有負號是因為 arcadeDrive 前進是正數，xboxcontroller 前進是負數
+                    self.driveSubsystem.deadzone(self.xbox.getLeftX()),) ,      #左右       abs()怎麼後退我就問
+                    self.driveSubsystem,))                                      #       方向錯改這裡
 
         # 自動指令
         self.autoCommand = Auto(self.driveSubsystem)
@@ -93,6 +95,7 @@ class RobotContainer:
 class Robot(commands2.TimedCommandRobot):
     def robotInit(self):
         self.container = RobotContainer()
+        self.autonomousCommand = None
 
     def autonomousInit(self):
         self.autonomousCommand = self.container.getAutonomousCommand()
