@@ -4,95 +4,117 @@ import wpilib.drive
 import rev
 
 
+# === 子系統：負責底盤控制 ===
 class DriveSubsystem(commands2.SubsystemBase):
     def __init__(self):
         super().__init__()
-        self.autonomousCommand = None
-        # 建立 4 顆 SparkMax (使用 CAN ID)
-        self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed) 
+
+        # --- 馬達設定 (CAN ID) ---
+        self.leftFront = rev.SparkMax(1, rev.SparkMax.MotorType.kBrushed)
         self.leftRear = rev.SparkMax(4, rev.SparkMax.MotorType.kBrushed)
         self.rightFront = rev.SparkMax(2, rev.SparkMax.MotorType.kBrushed)
-        self.rightRear = rev.SparkMax(3, rev.SparkMax.MotorType.kBrushed)  
+        self.rightRear = rev.SparkMax(3, rev.SparkMax.MotorType.kBrushed)
 
-
-        # 看情況改
-        self.leftRear.setInverted(True)
+        # --- 馬達方向設定 ---
+        # 若車子方向錯，修改此處
         self.leftFront.setInverted(True)
+        self.leftRear.setInverted(True)
+        self.rightFront.setInverted(False)
+        self.rightRear.setInverted(False)
 
-        #開車車設定
+        # --- 差速驅動 (前輪控制實體(跟隨指令在arcadedrive那)) ---
         self.robotDrive = wpilib.drive.DifferentialDrive(self.leftFront, self.rightFront)
 
-    def deadzone(self, value, zone=0.1):    # 死區判斷(不要亂抖aaaaaa)
+    # === 搖桿死區判斷 ===
+    def deadzone(self, value: float, zone: float = 0.1) -> float:
+        """若搖桿值小於死區範圍則回傳 0"""
         if abs(value) < zone:
-            return 0.0
-        return value
+            return 0.0  
+        else: 
+            return value
 
-    def arcadeDrive(self, forward: float, turn: float):    # 開車車指令2
-        # 後輪跟隨前輪
-        self.leftRear.set(self.leftFront.get())
-        self.rightRear.set(self.rightFront.get())
+    # === 手動駕駛模式 ===
+    def arcadeDrive(self, forward: float, turn: float):
+        """以 arcade drive 控制底盤"""
         self.robotDrive.arcadeDrive(forward, turn)
 
-    def stop(self):    # 停止馬達
+        # 後輪模擬跟隨前輪輸出
+        self.leftRear.set(self.leftFront.get())
+        self.rightRear.set(self.rightFront.get())
+
+    # === 停止機器人 ===
+    def stop(self):
         self.robotDrive.arcadeDrive(0.0, 0.0)
 
 
-class Auto(commands2.Command):
+# === 自動模式指令 ===
+class Autonomous(commands2.Command):
     def __init__(self, drive: DriveSubsystem):
         super().__init__()
         self.drive = drive
         self.timer = wpilib.Timer()
-        self.addRequirements(drive)
         self.stage = 0
 
-    def initialize(self):    #這名稱是command的
+        self.addRequirements(drive)
+
+    def initialize(self):
+        """自動開始時重設狀態"""
         self.timer.reset()
         self.timer.start()
         self.stage = 0
 
-    def execute(self):    # +1
+    def execute(self):
+        """自動階段流程"""
         if self.stage == 0:
-            # 第一階段：往前移動 2 秒
+            # 第一階段：前進 2 秒
             self.drive.arcadeDrive(0.5, 0.0)
             if self.timer.get() >= 2.0:
                 self.stage = 1
                 self.timer.reset()
+
         elif self.stage == 1:
-            # 第二階段：轉彎 1 秒
+            # 第二階段：右轉 1 秒
             self.drive.arcadeDrive(0.0, 0.5)
             if self.timer.get() >= 1.0:
                 self.stage = 2
+
         else:
-            # 第三階段（結束）
+            # 結束階段
             self.drive.stop()
 
-    def isFinished(self) -> bool:    # +1
+    def isFinished(self) -> bool:
+        """當 stage >= 2 表示結束"""
         return self.stage >= 2
 
-    def end(self, interrupted: bool):    # +1
+    def end(self, interrupted: bool):
         self.drive.stop()
 
 
+# === RobotContainer: 負責管理控制器與子系統 ===
 class RobotContainer:
     def __init__(self):
+        # 建立底盤子系統與手把
         self.driveSubsystem = DriveSubsystem()
         self.xbox = wpilib.XboxController(0)
 
-        # Teleop 模式下用搖桿控制
-        self.driveSubsystem.setDefaultCommand(commands2.cmd.run(
+        # === 預設指令 (Teleop 模式下自動執行) ===
+        self.driveSubsystem.setDefaultCommand(
+            commands2.cmd.run(
                 lambda: self.driveSubsystem.arcadeDrive(
-                    self.driveSubsystem.deadzone(-self.xbox.getLeftY()),        #前後   有負號是因為 arcadeDrive 前進是正數，xboxcontroller 前進是負數
-                    self.driveSubsystem.deadzone(self.xbox.getLeftX()),) ,      #左右       abs()怎麼後退我就問
-                    self.driveSubsystem,))                                      #       方向錯改這裡
+                    self.driveSubsystem.deadzone(-self.xbox.getLeftY()),  # 前後控制
+                    self.driveSubsystem.deadzone(self.xbox.getLeftX()),   # 左右控制
+                ),self.driveSubsystem))
 
-        # 自動指令
-        self.autoCommand = Auto(self.driveSubsystem)
+        # === 自動模式指令 ===
+        self.autoCommand = Autonomous(self.driveSubsystem)
 
     def getAutonomousCommand(self):
         return self.autoCommand
 
 
+# === 主 Robot 類別 ===
 class Robot(commands2.TimedCommandRobot):
+    """主機器人類別，管理不同模式的運作"""
     def robotInit(self):
         self.container = RobotContainer()
         self.autonomousCommand = None
@@ -108,8 +130,7 @@ class Robot(commands2.TimedCommandRobot):
 
 
 if __name__ == "__main__":
-    wpilib.run(Robot)    #把前面那坨拿來用
-
+    wpilib.run(Robot)
 
 
 
